@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "health",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "keep_vars": true,
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "r2_buckets": [{ "binding": "HISTORY", "bucket_name": "perricheno-health-history" }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}

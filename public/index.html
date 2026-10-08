@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f1f1f3">
+  <meta name="description" content="Live infrastructure updates and performance metrics for perricheno services.">
+  <title>Status · perricheno</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div class="wordmark"><h1>Status</h1><span class="wordmark-divider"></span><span class="eyebrow">Infrastructure</span></div>
+      <p class="intro">Live infrastructure updates and performance metrics<br class="desktop-break"> for <span id="site-name">perricheno</span> services.</p>
+    </header>
+
+    <section class="overview" aria-label="Current infrastructure status">
+      <button class="theme-toggle" id="theme-toggle" aria-label="Switch to dark theme" title="Switch theme">
+        <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path/></svg>
+      </button>
+      <div class="status-panel" id="status-panel" data-status="unknown">
+        <div class="current-state"><span class="status-dot large" aria-hidden="true"></span><div><p id="overall" aria-live="polite">Connecting</p><span class="small-label">Current state</span></div></div>
+        <span class="panel-divider"></span>
+        <div class="update-state"><p id="updated">Waiting for data</p><button id="refresh" class="refresh-button"><svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path/></svg><span>Refresh</span></button></div>
+      </div>
+    </section>
+
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="services" id="services" aria-label="Monitored services" aria-busy="true">
+      <div class="service-card skeleton" aria-label="Loading services"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-chart"></div></div>
+    </section>
+    <footer><span class="footer-live"><span></span>Checks every minute</span><span>Powered by Cloudflare</span></footer>
+    <noscript><p class="notice">JavaScript is required to display live status. You can also use <a href="/api/status">the status API</a>.</p></noscript>
+  </main>
+  <div class="sr-only" id="announcement" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.git
+node_modules
+.env*
+.dev.vars*
+.wrangler
+data
+dist
+test-results
+photo_*.jpg
+test
