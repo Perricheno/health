@@ -1,6 +1,7 @@
 import { MonitorEngine } from './engine.js';
 import { AdminApi } from './admin.js';
 import { RANGES } from './monitor.js';
+import { DeploymentStore } from './deployments.js';
 
 // Chunk JSON to stay below Durable Object KV's per-value limit with many services.
 export class ChunkStorage {
@@ -28,12 +29,15 @@ export class ChunkStorage {
   }
 }
 
-export async function monitorRequest(request, engine, admin) {
+export async function monitorRequest(request, engine, admin, deployments) {
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/admin/')) return admin.handle(request);
+  if (url.pathname === '/api/deployments/ingest' && deployments) return deployments.ingest(request);
   const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   if (request.method !== 'GET') return new Response(null, { status: 405, headers: { Allow: 'GET' } });
   if (url.pathname === '/api/health') return json({ ok: true });
+  if (url.pathname === '/api/deployments' && deployments) return json(deployments.snapshot());
+  if (url.pathname === '/api/deployments/stream' && deployments) return deployments.stream();
   if (url.pathname === '/api/live') return json(engine.live());
   if (url.pathname !== '/api/status') return json({ error: 'Not found' }, 404);
   const range = url.searchParams.get('range') || '24h';
@@ -48,8 +52,9 @@ export class MonitorCoordinator {
     this.env = env;
     const storage = new ChunkStorage(ctx.storage);
     this.engine = new MonitorEngine(storage, env);
-    this.admin = new AdminApi(storage, this.engine, env);
-    this.ready = ctx.blockConcurrencyWhile(() => this.engine.init());
+    this.deployments = new DeploymentStore(storage, env);
+    this.admin = new AdminApi(storage, this.engine, env, this.deployments);
+    this.ready = ctx.blockConcurrencyWhile(() => Promise.all([this.engine.init(), this.deployments.init()]));
     this.running = false;
   }
   async wake() {
@@ -61,7 +66,7 @@ export class MonitorCoordinator {
     await this.ready;
     await this.wake();
     if (new URL(request.url).pathname === '/internal/wake') return new Response('OK');
-    const response = await monitorRequest(request, this.engine, this.admin);
+    const response = await monitorRequest(request, this.engine, this.admin, this.deployments);
     if (request.method === 'PUT' && response.ok && !this.running) await this.ctx.storage.setAlarm(Date.now() + 10);
     return response;
   }

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { parseServices } from '../src/monitor.js';
@@ -6,6 +7,7 @@ import { MonitorEngine } from '../src/engine.js';
 import { AdminApi } from '../src/admin.js';
 import { monitorRequest } from '../src/coordinator.js';
 import { FileState } from './state.mjs';
+import { DeploymentStore } from '../src/deployments.js';
 import { FileBucket } from './storage.mjs';
 
 const bucket = new FileBucket(process.env.DATA_DIR || './data');
@@ -14,9 +16,11 @@ parseServices(env); // Fail fast on an invalid configuration.
 const state = new FileState(process.env.DATA_DIR || './data');
 const engine = new MonitorEngine(state, env);
 await engine.init();
-const admin = new AdminApi(state, engine, env);
+const deployments = new DeploymentStore(state, env);
+await deployments.init();
+const admin = new AdminApi(state, engine, env, deployments);
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const types = { '/admin.js': 'text/javascript; charset=utf-8', '/index.html': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/theme.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml', '/vendor/morphicons.js': 'text/javascript; charset=utf-8', '/fonts/InterVariable.woff2': 'font/woff2' };
+const types = { '/deployments.js': 'text/javascript; charset=utf-8', '/admin.js': 'text/javascript; charset=utf-8', '/index.html': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.js': 'text/javascript; charset=utf-8', '/theme.js': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml', '/vendor/morphicons.js': 'text/javascript; charset=utf-8', '/fonts/InterVariable.woff2': 'font/woff2' };
 let checking = false, stopping = false, timer, cleanupAt = 0;
 async function check() {
   if (checking) return;
@@ -40,11 +44,19 @@ const server = createServer(async (req, res) => {
       let body;
       if (!['GET', 'HEAD'].includes(req.method)) {
         const chunks = []; let size = 0;
-        for await (const chunk of req) { size += chunk.length; if (size > 2048) { res.writeHead(413); res.end(); return; } chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > 8192) { res.writeHead(413); res.end(); return; } chunks.push(chunk); }
         body = Buffer.concat(chunks);
       }
-      const response = await monitorRequest(new Request(requestUrl, { method: req.method, headers, ...(body ? { body } : {}) }), engine, admin);
+      const response = await monitorRequest(new Request(requestUrl, { method: req.method, headers, ...(body ? { body } : {}) }), engine, admin, deployments);
       res.writeHead(response.status, Object.fromEntries(response.headers));
+      if (response.headers.get('Content-Type') === 'text/event-stream') {
+        res.flushHeaders();
+        const stream = Readable.fromWeb(response.body);
+        res.on('close', () => stream.destroy());
+        stream.on('error', () => res.destroy());
+        stream.pipe(res);
+        return;
+      }
       res.end(await response.text());
       if (req.method === 'PUT' && response.ok && !checking) { clearTimeout(timer); timer = setTimeout(check, 20); }
       return;

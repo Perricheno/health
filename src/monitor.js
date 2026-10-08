@@ -1,7 +1,13 @@
 export const MINUTE = 60_000;
 export const DAY = 86_400_000;
 export const RANGES = { '1m': MINUTE, '5m': 5 * MINUTE, '24h': DAY, '7d': 7 * DAY, '30d': 30 * DAY };
-const DEFAULT_SERVICES = '[{"id":"api","name":"API (api.perricheno.com)","url":"https://api.perricheno.com"}]';
+export const DEFAULT_SERVICES = JSON.stringify([
+  { id: 'api', name: 'API (api.perricheno.com)', url: 'https://api.perricheno.com' },
+  { id: 'egin-web', name: 'Egin · Website', url: 'https://egin.perricheno.com/api/health' },
+  { id: 'egin-api', name: 'Egin · Developer API', url: 'https://api-egin.perricheno.com/openapi.json' },
+  { id: 'egin-dev-web', name: 'Egin · Staging website', url: 'https://dev-egin.perricheno.com/api/health' },
+  { id: 'egin-dev-api', name: 'Egin · Staging API', url: 'https://dev-api-egin.perricheno.com/openapi.json' },
+]);
 
 export function parseServices(env) {
   const values = JSON.parse(env.SERVICES_JSON || DEFAULT_SERVICES);

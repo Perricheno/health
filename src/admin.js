@@ -5,7 +5,7 @@ const digest = async text => [...new Uint8Array(await crypto.subtle.digest('SHA-
 const response = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
 
 export class AdminApi {
-  constructor(storage, engine, env) { this.storage = storage; this.engine = engine; this.env = env; this.queue = Promise.resolve(); }
+  constructor(storage, engine, env, deployments) { this.storage = storage; this.engine = engine; this.env = env; this.deployments = deployments; this.queue = Promise.resolve(); }
   handle(request) {
     const result = this.queue.then(() => this.process(request));
     this.queue = result.catch(() => {});
@@ -15,7 +15,7 @@ export class AdminApi {
     const url = new URL(request.url);
     const method = request.method;
     const path = url.pathname;
-    if (!['/api/admin/session', '/api/admin/login', '/api/admin/logout', '/api/admin/settings'].includes(path)) return response({ error: 'Not found' }, 404);
+    if (!['/api/admin/session', '/api/admin/login', '/api/admin/logout', '/api/admin/settings', '/api/admin/deploy-token'].includes(path)) return response({ error: 'Not found' }, 404);
     const allowed = path === '/api/admin/session' ? 'GET' : path === '/api/admin/settings' ? 'PUT' : 'POST';
     if (method !== allowed) return response({ error: 'Method not allowed' }, 405, { Allow: allowed });
     if (method !== 'GET' && (request.headers.get('Origin') !== url.origin || request.headers.get('Sec-Fetch-Site') === 'cross-site')) return response({ error: 'Invalid origin' }, 403);
@@ -41,7 +41,7 @@ export class AdminApi {
       await this.storage.put('auth', auth);
       return response({ ok: true }, 200, { 'Set-Cookie': cookie('') });
     }
-    if (path === '/api/admin/settings' && !valid) return response({ error: 'Please sign in' }, 401);
+    if (['/api/admin/settings', '/api/admin/deploy-token'].includes(path) && !valid) return response({ error: 'Please sign in' }, 401);
     let body;
     try {
       if (Number(request.headers.get('Content-Length') || 0) > 2048) return response({ error: 'Request too large' }, 413);
@@ -59,6 +59,11 @@ export class AdminApi {
       body = JSON.parse(text);
       if (!body || typeof body !== 'object') throw new Error();
     } catch { return response({ error: 'Invalid request' }, 400); }
+    if (path === '/api/admin/deploy-token') {
+      if (!this.deployments) return response({ error: 'Deployments unavailable' }, 503);
+      try { return response({ token: await this.deployments.issueToken(body.project), project: body.project }); }
+      catch (error) { return response({ error: error.message }, 400); }
+    }
     if (path === '/api/admin/settings') {
       if (!INTERVALS.includes(body.intervalSeconds)) return response({ error: 'Choose 1, 5, 10, 30 or 60 seconds' }, 400);
       await this.engine.setInterval(body.intervalSeconds);

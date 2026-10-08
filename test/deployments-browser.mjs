@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
+const base = process.env.TEST_URL || 'http://localhost:8787';
+if (!['localhost', '127.0.0.1'].includes(new URL(base).hostname)) throw new Error('Synthetic deployments are restricted to a local test server');
+const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
+await mkdir('test-results', { recursive: true });
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, colorScheme: 'light' });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto(base);
+  await page.locator('#stream-state[data-connected=true]').waitFor();
+  const login = await context.request.post(`${base}/api/admin/login`, { headers: { Origin: base }, data: { pin: '0000' } });
+  assert.equal(login.status(), 200);
+  const issued = await context.request.post(`${base}/api/admin/deploy-token`, { headers: { Origin: base }, data: { project: 'egin' } });
+  assert.equal(issued.status(), 200);
+  const { token } = await issued.json();
+  const runId = crypto.randomUUID(); let seq = 0;
+  const send = async fields => {
+    const response = await context.request.post(`${base}/api/deployments/ingest`, { headers: { Authorization: `Bearer ${token}` }, data: { project: 'egin', environment: 'staging', runId, seq: ++seq, ...fields } });
+    assert.equal(response.status(), 200, await response.text());
+  };
+  const stages = ['prepare', 'build_api', 'build_web', 'backup', 'start', 'assets', 'switch', 'verify'];
+  await send({ type: 'start', action: 'deploy', commit: 'a'.repeat(40), stages });
+  await send({ type: 'stage', stage: 'prepare', state: 'running' });
+  await send({ type: 'stage', stage: 'prepare', state: 'complete' });
+  await send({ type: 'stage', stage: 'build_api', state: 'running' });
+  await page.locator('.deployment-card[data-status=running]').waitFor();
+  const card = page.locator('.deployment-card[data-status=running]');
+  await card.locator('summary').click();
+  await send({ type: 'log', code: 'build_step', step: 3, total: 8, message: 'PRIVATE_SECRET=must-not-render' });
+  await page.waitForFunction(() => document.querySelector('.deployment-card[data-status=running] .deploy-lines').textContent.includes('Build step #3 / 8'));
+  assert.equal(await page.getByText('PRIVATE_SECRET', { exact: false }).count(), 0);
+  assert.equal(await card.locator('[role=progressbar]').getAttribute('aria-valuenow'), '1');
+  await page.locator('[data-service-id="egin-dev-web"] .deploy-badge').waitFor();
+  assert.match(await page.locator('[data-service-id="egin-dev-web"] .deploy-badge').textContent(), /Deploying/);
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: 'test-results/deployments-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: 'test-results/deployments-mobile.png', fullPage: true });
+  await page.locator('#theme-toggle').click(); await page.waitForTimeout(900);
+  await page.screenshot({ path: 'test-results/deployments-dark.png', fullPage: true });
+  await context.setOffline(true);
+  // The deployment advances while the viewing browser is disconnected.
+  const push = await fetch(`${base}/api/deployments/ingest`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ project: 'egin', environment: 'staging', runId, seq: ++seq, type: 'stage', stage: 'build_api', state: 'complete' }) });
+  assert.equal(push.status, 200);
+  await context.setOffline(false);
+  await page.waitForFunction(() => document.querySelector('.deployment-card[data-status=running] [role=progressbar]').getAttribute('aria-valuenow') === '2');
+  for (const stage of stages.slice(2)) { await send({ type: 'stage', stage, state: 'running' }); await send({ type: 'stage', stage, state: 'complete' }); }
+  await send({ type: 'finish', status: 'success' });
+  await page.locator('.deployment-card[data-status=success]').waitFor();
+  assert.match(await page.locator('.deployment-card[data-status=success] .deploy-current').textContent(), /Release is live/);
+  await page.reload();
+  await page.locator('.deployment-card[data-status=success]').waitFor();
+  await page.setViewportSize({ width: 320, height: 568 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.deepEqual(errors, []);
+  console.log('Deployment browser checks passed: real SSE events, stages, curated log stream, service badges, offline replay, completion, mobile and dark mode.');
+} finally { await browser.close(); }

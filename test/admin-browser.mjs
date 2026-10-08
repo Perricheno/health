@@ -10,7 +10,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base);
-  await page.locator('.bars').waitFor();
+  await page.locator('.bars').first().waitFor();
   const session = page.waitForResponse(r => r.url().endsWith('/api/admin/session'));
   await page.locator('#admin-open').click();
   await session;

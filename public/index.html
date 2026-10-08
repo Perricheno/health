@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" type="module"></script>
   <script src="/admin.js" type="module"></script>
+  <script src="/deployments.js" type="module"></script>
 </head>
 <body>
   <main class="page">
@@ -32,6 +33,10 @@
     </section>
 
     <div id="notice" class="notice" role="status" hidden></div>
+    <section class="deployments-section" id="deployments-section" aria-label="Deployment activity" hidden>
+      <div class="deployments-heading"><h2>Deployments</h2><span class="stream-state" id="stream-state" data-connected="false"><i></i>Connecting</span></div>
+      <div id="deployment-runs" class="deployment-runs"></div>
+    </section>
     <section class="services" id="services" aria-label="Monitored services" aria-busy="true">
       <div class="service-card skeleton" aria-label="Loading services"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-chart"></div></div>
     </section>

@@ -87,6 +87,7 @@ class ServiceCard {
     this.generation = 0;
     this.el = document.createElement('article');
     this.el.className = 'service-card';
+    this.el.dataset.serviceId = service.id;
     this.el.style.setProperty('--order', index);
     // Only fixed application markup is interpolated. All API text uses textContent.
     this.el.innerHTML = `<h2></h2><p class="service-state"><span class="status-dot" aria-hidden="true"></span><span class="service-status"></span></p>
@@ -271,6 +272,7 @@ async function refresh(manual = false) {
     if (!data.services.length) {
       container.innerHTML = '<div class="service-card empty-state"><h2>No services yet</h2><p>Configured services will appear here automatically.</p></div>';
     }
+    window.dispatchEvent(new Event('health-services'));
     notice();
     success = true;
     if (manual) $('#announcement').textContent = 'Status updated.';
