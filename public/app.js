@@ -66,14 +66,17 @@ async function fetchStatus(range) {
 function notice(text = '') { $('#notice').textContent = text; $('#notice').hidden = !text; }
 
 function updateOverview(data) {
+  if (lastData && data.now < lastData.now) return;
+  data = { ...lastData, ...data };
   lastData = data;
   lastReceived = Date.now();
   $('#site-name').textContent = data.siteName;
   document.title = `Status · ${data.siteName}`;
   $('#status-panel').dataset.status = data.overall;
   $('#overall').textContent = overallLabels[data.overall];
-  $('#updated').textContent = data.updatedAt ? `Updated at ${new Date(data.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Waiting for first check';
+  $('#updated').textContent = data.updatedAt ? `Updated at ${new Date(data.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}` : 'Waiting for first check';
   $('#updated').title = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '';
+  $('#check-frequency').textContent = data.interval === 1000 ? 'Checks every second' : `Checks every ${data.interval / 1000} seconds`;
 }
 
 class ServiceCard {
@@ -169,7 +172,7 @@ class ServiceCard {
     });
     const note = $('.card-note', this.el);
     note.hidden = service.samples > 0 && service.coverage >= 95 && service.status !== 'unknown';
-    note.textContent = service.status === 'unknown' && service.checkedAt ? 'Checks are delayed. Current status is unknown.' : !service.samples ? 'Waiting for observations in this period. Checks run every minute.' : `${service.samples.toLocaleString()} check${service.samples === 1 ? '' : 's'} recorded · ${service.coverage.toFixed(1)}% coverage. Gray bars have no observations.`;
+    note.textContent = service.status === 'unknown' && service.checkedAt ? 'Checks are delayed. Current status is unknown.' : !service.samples ? 'Waiting for observations in this period.' : `${service.samples.toLocaleString()} check${service.samples === 1 ? '' : 's'} recorded · ${service.coverage.toFixed(1)}% coverage. Gray bars have no observations.`;
     if (this.selected >= 0) this.inspect(this.selected);
   }
 
@@ -295,7 +298,7 @@ window.addEventListener('online', () => refresh());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 setInterval(() => {
   // A disconnected browser must not keep displaying a green current status forever.
-  if (lastData && Date.now() - lastReceived > 180000) {
+  if (lastData && Date.now() - lastReceived > Math.max(15000, lastData.interval * 3)) {
     $('#status-panel').dataset.status = 'unknown';
     $('#overall').textContent = 'Updates Delayed';
     for (const card of cards.values()) { card.el.dataset.status = 'unknown'; $('.service-status', card.el).textContent = 'Updates delayed'; }
@@ -303,3 +306,36 @@ setInterval(() => {
   if (!document.hidden) refresh();
 }, 30000);
 refresh();
+
+let liveBusy = false;
+async function refreshLive() {
+  if (lastData && Date.now() - lastReceived > Math.max(15000, lastData.interval * 3)) {
+    $('#status-panel').dataset.status = 'unknown';
+    $('#overall').textContent = 'Updates Delayed';
+    for (const card of cards.values()) { card.el.dataset.status = 'unknown'; $('.service-status', card.el).textContent = 'Updates delayed'; }
+  }
+  if (document.hidden || liveBusy || !cards.size) return;
+  liveBusy = true;
+  try {
+    const response = await fetch('/api/live', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return;
+    const data = await response.json();
+    updateOverview(data);
+    for (const service of data.services) {
+      const card = cards.get(service.id);
+      if (!card) continue;
+      card.el.dataset.status = service.status;
+      $('.service-status', card.el).textContent = statusLabels[service.status];
+    }
+    const shortRanges = [...new Set([...cards.values()].filter(card => ['1m', '5m'].includes(card.range)).map(card => card.range))];
+    for (const range of shortRanges) {
+      const details = await fetchStatus(range);
+      for (const service of details.services) {
+        const card = cards.get(service.id);
+        if (card?.range === range && card.el.getAttribute('aria-busy') !== 'true') card.render(service);
+      }
+    }
+  } catch {} finally { liveBusy = false; }
+}
+setInterval(refreshLive, 1000);
+window.addEventListener('health-settings', () => { refreshLive(); refresh(); });

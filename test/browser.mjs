@@ -18,7 +18,7 @@ try {
   assert.ok(await page.locator('#theme-icon path').getAttribute('d'));
   assert.match(await page.locator('body').evaluate(el => getComputedStyle(el).fontFamily), /^Inter/);
   assert.equal(await page.locator('.bar').count(), 48);
-  assert.match(await page.locator('h2').textContent(), /api.perricheno.com/);
+  assert.match(await page.locator('.service-card h2').textContent(), /api.perricheno.com/);
   await page.waitForTimeout(1000);
   await page.screenshot({ path: 'test-results/desktop-light.png', fullPage: true });
   await page.locator('.bars').focus();

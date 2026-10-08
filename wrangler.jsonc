@@ -6,6 +6,8 @@
   "keep_vars": true,
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
   "r2_buckets": [{ "binding": "HISTORY", "bucket_name": "perricheno-health-history" }],
+  "durable_objects": { "bindings": [{ "name": "MONITOR", "class_name": "MonitorCoordinator" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MonitorCoordinator"] }],
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }
 }

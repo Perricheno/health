@@ -11,6 +11,7 @@
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" type="module"></script>
+  <script src="/admin.js" type="module"></script>
 </head>
 <body>
   <main class="page">
@@ -34,9 +35,36 @@
     <section class="services" id="services" aria-label="Monitored services" aria-busy="true">
       <div class="service-card skeleton" aria-label="Loading services"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-chart"></div></div>
     </section>
-    <footer><span class="footer-live"><span></span>Checks every minute</span><span>Powered by Cloudflare</span></footer>
+    <footer><span class="footer-live"><span></span><span id="check-frequency">Checks every second</span></span><button id="admin-open" class="admin-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11V7a5 5 0 0 1 10 0v4M6 11h12v10H6Z"/></svg>Admin</button><span>Powered by Cloudflare</span></footer>
     <noscript><p class="notice">JavaScript is required to display live status. You can also use <a href="/api/status">the status API</a>.</p></noscript>
   </main>
   <div class="sr-only" id="announcement" aria-live="polite"></div>
+  <dialog id="admin-dialog" class="admin-dialog" aria-labelledby="admin-title">
+    <button class="admin-close" id="admin-close" aria-label="Close admin panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    <div class="admin-emblem"><svg id="admin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path/></svg></div>
+    <h2 id="admin-title" tabindex="-1">Enter Passcode</h2>
+    <p class="admin-subtitle" id="admin-subtitle">Your infrastructure. Your controls.</p>
+    <section id="pin-view" aria-label="Four digit passcode">
+      <div class="pin-dots" id="pin-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <span id="pin-progress" class="sr-only" aria-live="polite">0 of 4 digits entered</span>
+      <p class="admin-message" id="pin-message" role="status"></p>
+      <div class="pin-keypad" id="pin-keypad">
+        <button data-digit="1" aria-label="1"><span>1</span><small>&nbsp;</small></button><button data-digit="2" aria-label="2"><span>2</span><small>ABC</small></button><button data-digit="3" aria-label="3"><span>3</span><small>DEF</small></button>
+        <button data-digit="4" aria-label="4"><span>4</span><small>GHI</small></button><button data-digit="5" aria-label="5"><span>5</span><small>JKL</small></button><button data-digit="6" aria-label="6"><span>6</span><small>MNO</small></button>
+        <button data-digit="7" aria-label="7"><span>7</span><small>PQRS</small></button><button data-digit="8" aria-label="8"><span>8</span><small>TUV</small></button><button data-digit="9" aria-label="9"><span>9</span><small>WXYZ</small></button>
+        <span></span><button data-digit="0" aria-label="0"><span>0</span></button><button id="pin-delete" class="pin-delete" aria-label="Delete last digit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h12v14H9l-7-7 7-7Zm3 4 6 6m0-6-6 6"/></svg></button>
+      </div>
+    </section>
+    <section id="settings-view" hidden>
+      <div class="settings-heading"><span>Check interval</span><span class="settings-badge">LIVE</span></div>
+      <div class="interval-options" id="interval-options" role="group" aria-label="Check interval in seconds">
+        <button data-seconds="1" aria-pressed="false">1<span>sec</span></button><button data-seconds="5" aria-pressed="false">5<span>sec</span></button><button data-seconds="10" aria-pressed="false">10<span>sec</span></button><button data-seconds="30" aria-pressed="false">30<span>sec</span></button><button data-seconds="60" aria-pressed="false">60<span>sec</span></button>
+      </div>
+      <p class="settings-description">Checks keep running when this page is closed. Slow responses may extend the interval.</p>
+      <button id="settings-save" class="settings-save">Save changes</button>
+      <p class="admin-message" id="settings-message" role="status"></p>
+      <button id="admin-logout" class="admin-logout">Lock admin</button>
+    </section>
+  </dialog>
 </body>
 </html>

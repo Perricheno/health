@@ -77,7 +77,7 @@ function accumulator(range, now) {
     status: 'unknown', samples: 0, uptime: null, latency: null, code: null,
   }));
   const totals = bars.map(() => ({ good: 0, latency: 0, last: -1 }));
-  let count = 0, good = 0, latency = 0, latest = null;
+  let count = 0, good = 0, latency = 0, coverageMs = 0, latest = null;
   return {
     add(point) {
       if (point.time > now) return;
@@ -85,8 +85,12 @@ function accumulator(range, now) {
       if (point.time <= start) return;
       const index = Math.min(47, Math.floor((point.time - start) / RANGES[range] * 48));
       const bar = bars[index], total = totals[index];
-      count++; bar.samples++; latency += point.latency; total.latency += point.latency;
-      if (point.status !== 'down') { good++; total.good++; }
+      const samples = point.samples ?? 1;
+      const successes = point.good ?? (point.status !== 'down' ? 1 : 0);
+      const duration = point.latencySum ?? point.latency;
+      count += samples; bar.samples += samples; latency += duration; total.latency += duration;
+      good += successes; total.good += successes;
+      coverageMs += point.coverageMs ?? point.intervalMs ?? MINUTE;
       if (bar.status === 'unknown' || point.status === 'down' || point.status === 'degraded' && bar.status !== 'down') bar.status = point.status;
       if (point.time >= total.last) { bar.code = point.code; bar.reason = point.reason; total.last = point.time; }
     },
@@ -95,7 +99,7 @@ function accumulator(range, now) {
         if (bar.samples) { bar.uptime = totals[index].good / bar.samples * 100; bar.latency = Math.round(totals[index].latency / bar.samples); }
       });
       return { latest, summary: { uptime: count ? good / count * 100 : null, samples: count,
-        latency: count ? Math.round(latency / count) : null, coverage: Math.min(100, count / (RANGES[range] / MINUTE) * 100), bars } };
+        latency: count ? Math.round(latency / count) : null, coverage: Math.min(100, coverageMs / RANGES[range] * 100), bars } };
     },
   };
 }
@@ -106,7 +110,7 @@ export function summarize(points, range, now) {
   return acc.finish().summary;
 }
 
-export async function getStatus(env, range = '24h', now = Date.now()) {
+export async function getStatus(env, range = '24h', now = Date.now(), live = null) {
   const services = parseServices(env);
   if (!Object.hasOwn(RANGES, range)) throw new Error('Invalid range');
   const start = Math.floor((now - Math.max(RANGES[range], DAY)) / DAY) * DAY;
@@ -114,19 +118,70 @@ export async function getStatus(env, range = '24h', now = Date.now()) {
   for (let t = start; t <= now; t += DAY) keys.push(dayKey(t));
   // At most four daily objects in memory at once, even for 30-day requests.
   const accum = Object.fromEntries(services.map(s => [s.id, accumulator(range, now)]));
+  const overlays = Object.fromEntries(services.map(s => {
+    const raw = live?.recent?.[s.id] || [];
+    const pending = Object.values(live?.pending?.[s.id] || {});
+    const slots = new Set([...raw, ...pending].map(p => Math.floor(p.time / MINUTE)));
+    const points = ['1m', '5m'].includes(range) ? [...pending.filter(p => !raw.some(r => Math.floor(r.time / MINUTE) === Math.floor(p.time / MINUTE))), ...raw] : Object.values({ ...rollup(raw), ...live?.pending?.[s.id] });
+    return [s.id, { slots, points }];
+  }));
+  if (live && ['1m', '5m'].includes(range) && live.startedAt <= now - RANGES[range]) keys.length = 0;
   for (let i = 0; i < keys.length; i += 4) {
     const days = await Promise.all(keys.slice(i, i + 4).map(async key => {
       const object = await env.HISTORY.get(key);
       return object ? object.json() : {};
     }));
-    for (const day of days) for (const service of services) for (const point of day[service.id] || []) accum[service.id].add(point);
+    for (const day of days) for (const service of services) for (const point of day[service.id] || []) {
+      if (!overlays[service.id].slots.has(Math.floor(point.time / MINUTE))) accum[service.id].add(point);
+    }
   }
+  for (const service of services) for (const point of overlays[service.id].points) accum[service.id].add(point);
   const result = services.map(({ id, name }) => {
-    const { latest: last, summary } = accum[id].finish();
-    return { id, name, status: last && now - last.time <= 3 * MINUTE ? last.status : 'unknown',
+    const { latest, summary } = accum[id].finish();
+    const last = live?.latest?.[id] || latest;
+    const staleMs = live ? Math.max(15000, live.intervalMs * 3) : 3 * MINUTE;
+    return { id, name, status: last && now - last.time <= staleMs ? (last.lastStatus || last.status) : 'unknown',
       checkedAt: last?.time ?? null, ...summary };
   });
   const overall = result.some(s => s.status === 'down') ? 'down' : result.some(s => s.status === 'degraded') ? 'degraded' : !result.length || result.some(s => s.status === 'unknown') ? 'unknown' : 'operational';
-  return { siteName: String(env.SITE_NAME || 'perricheno').slice(0, 80), range, now, interval: MINUTE, overall,
+  return { siteName: String(env.SITE_NAME || 'perricheno').slice(0, 80), range, now, interval: live?.intervalMs || MINUTE, overall,
     updatedAt: Math.max(0, ...result.map(s => s.checkedAt || 0)) || null, services: result };
+}
+
+export function rollup(points, target = {}) {
+  for (const point of points) {
+    const key = Math.floor(point.time / MINUTE);
+    const aggregate = target[key] || { time: point.time, samples: 0, good: 0, latencySum: 0, coverageMs: 0, status: 'operational' };
+    aggregate.samples++;
+    aggregate.good += point.status !== 'down' ? 1 : 0;
+    aggregate.latencySum += point.latency;
+    aggregate.coverageMs = Math.min(MINUTE, aggregate.coverageMs + (point.intervalMs || MINUTE));
+    if (point.status === 'down' || point.status === 'degraded' && aggregate.status !== 'down') aggregate.status = point.status;
+    if (point.time >= aggregate.time) Object.assign(aggregate, { time: point.time, code: point.code, reason: point.reason, lastStatus: point.status });
+    target[key] = aggregate;
+  }
+  return target;
+}
+
+export async function archivePoints(env, records) {
+  const days = {};
+  for (const [id, points] of Object.entries(records)) for (const point of points) {
+    const key = dayKey(point.time);
+    days[key] ||= {};
+    (days[key][id] ||= []).push(point);
+  }
+  for (const [key, entries] of Object.entries(days)) {
+    let saved = false;
+    for (let retry = 0; retry < 5; retry++) {
+      const object = await env.HISTORY.get(key);
+      const day = object ? await object.json() : {};
+      for (const [id, points] of Object.entries(entries)) {
+        const slots = new Set(points.map(p => Math.floor(p.time / MINUTE)));
+        day[id] = [...(day[id] || []).filter(p => !slots.has(Math.floor(p.time / MINUTE))), ...points].sort((a, b) => a.time - b.time);
+      }
+      saved = Boolean(await env.HISTORY.put(key, JSON.stringify(day), { httpMetadata: { contentType: 'application/json' }, onlyIf: object ? { etagMatches: object.etag } : { etagDoesNotMatch: '*' } }));
+      if (saved) break;
+    }
+    if (!saved) throw new Error('Archive write conflict');
+  }
 }
