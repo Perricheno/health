@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DeploymentStore } from '../src/deployments.js';
+import { DeploymentStore, deploymentProjects } from '../src/deployments.js';
 import { AdminApi } from '../src/admin.js';
 
 class Storage {
@@ -36,6 +36,13 @@ test('APIBlock uses a separate token and maps production events to its API servi
   assert.equal((await send(start, apiToken)).status, 200);
   assert.deepEqual(store.snapshot().runs[0].serviceIds, ['api']);
   assert.equal(store.snapshot().runs[0].repository, 'Perricheno/apiblock');
+});
+
+test('existing custom project configuration retains Egin and gains APIBlock', () => {
+  const egin = { id: 'egin', name: 'Egin', repository: 'Perricheno/egin', services: { production: ['egin-api'], staging: [] } };
+  const env = { DEPLOY_PROJECTS_JSON: JSON.stringify([egin]) };
+  assert.deepEqual(deploymentProjects(env).map(p => p.id), ['egin', 'apiblock']);
+  assert.deepEqual(deploymentProjects({ DEPLOY_PROJECTS_JSON: '[]' }), []);
 });
 
 test('ordered stages, idempotency, completion and public event vocabulary', async () => {

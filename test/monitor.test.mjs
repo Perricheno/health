@@ -30,6 +30,9 @@ test('config rejects duplicate IDs, unsafe protocols and invalid thresholds', ()
     assert.throws(() => parseServices({ SERVICES_JSON: JSON.stringify(entries) }));
   }
   assert.equal(parseServices({})[0].url, 'https://api.perricheno.com/');
+  const configuredApi = { id: 'api', name: 'API', url: 'https://api.perricheno.com' };
+  assert.equal(parseServices({ SERVICES_JSON: JSON.stringify([configuredApi]) })[0].expectedStatus, 401);
+  assert.equal(parseServices({ SERVICES_JSON: JSON.stringify([{ ...configuredApi, expectedStatus: 200 }]) })[0].expectedStatus, 200);
 });
 
 test('probes distinguish HTTP errors, custom expected status, network failures and timeouts', async () => {

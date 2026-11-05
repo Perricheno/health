@@ -14,10 +14,11 @@ export function parseServices(env) {
   if (!Array.isArray(values) || values.length > 20) throw new Error('SERVICES_JSON must be an array of up to 20 services');
   const ids = new Set();
   return values.map(value => {
-    const { id, name, url, headers = {}, method = 'GET', expectedStatus, timeoutMs = 10000, degradedMs = 1500 } = value;
+    const { id, name, url, headers = {}, method = 'GET', timeoutMs = 10000, degradedMs = 1500 } = value;
     if (!/^[a-z0-9_-]{1,64}$/.test(id) || ['__proto__', 'constructor', 'prototype'].includes(id) || ids.has(id)) throw new Error('Service IDs must be unique and URL-safe');
     ids.add(id);
     const target = new URL(url);
+    const expectedStatus = value.expectedStatus === undefined && id === 'api' && target.href === 'https://api.perricheno.com/' ? 401 : value.expectedStatus;
     if (!['https:', 'http:'].includes(target.protocol) || target.username || target.password) throw new Error(`Invalid URL for ${id}`);
     if (typeof name !== 'string' || !name.trim() || name.length > 120) throw new Error(`Invalid name for ${id}`);
     if (!['GET', 'HEAD'].includes(method)) throw new Error(`Invalid method for ${id}`);

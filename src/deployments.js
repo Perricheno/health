@@ -8,8 +8,14 @@ const DEFAULT_PROJECTS = [
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(n => n.toString(16).padStart(2, '0')).join('');
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 export function deploymentProjects(env) {
-  const projects = env.DEPLOY_PROJECTS_JSON ? JSON.parse(env.DEPLOY_PROJECTS_JSON) : DEFAULT_PROJECTS;
+  let projects = env.DEPLOY_PROJECTS_JSON ? JSON.parse(env.DEPLOY_PROJECTS_JSON) : DEFAULT_PROJECTS;
   if (!Array.isArray(projects) || projects.length > 10) throw new Error('Invalid deployment projects');
+  // Existing deployments may provide their own project list. Preserve it and
+  // add APIBlock unless an explicit configuration for it already exists.
+  if (env.DEPLOY_PROJECTS_JSON && projects.length && !projects.some(p => p.id === 'apiblock')) {
+    if (projects.length >= 10) throw new Error('No room for APIBlock deployment project');
+    projects = [...projects, DEFAULT_PROJECTS[1]];
+  }
   const seen = new Set();
   return projects.map(p => {
     if (!/^[a-z0-9_-]{1,40}$/.test(p.id) || seen.has(p.id) || ['__proto__', 'constructor', 'prototype'].includes(p.id)) throw new Error('Invalid project ID');
