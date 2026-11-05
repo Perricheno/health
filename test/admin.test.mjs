@@ -36,7 +36,7 @@ async function setup(env = {}) {
 const req = (path, method = 'GET', body, cookie = '', origin = 'https://status.test', ip = '127.0.0.1') => new Request(`https://status.test/api/admin/${path}`, {
   method, headers: { Origin: origin, Cookie: cookie, 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}),
 });
-const ok = async () => new Response('OK');
+const ok = async url => new Response('OK', { status: String(url).startsWith('https://api.perricheno.com/') ? 401 : 200 });
 const now = Date.UTC(2026, 9, 9, 12);
 
 test('0000 logs in with an opaque HttpOnly session; settings require authentication and same origin', async () => {

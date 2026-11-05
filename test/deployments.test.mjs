@@ -27,6 +27,17 @@ test('deployment ingestion authenticates, validates scope, and ping never create
   assert.equal(store.snapshot().runs.length, 0);
 });
 
+test('APIBlock uses a separate token and maps production events to its API service', async () => {
+  const { store, token, send } = await setup();
+  const apiToken = await store.issueToken('apiblock');
+  assert.equal((await send({ project: 'apiblock', type: 'ping' }, token)).status, 401);
+  assert.equal((await send({ project: 'egin', type: 'ping' }, apiToken)).status, 401);
+  const start = { project: 'apiblock', environment: 'production', runId: crypto.randomUUID(), seq: 1, type: 'start', action: 'deploy', commit: 'b'.repeat(40), stages: ['prepare', 'switch', 'verify'] };
+  assert.equal((await send(start, apiToken)).status, 200);
+  assert.deepEqual(store.snapshot().runs[0].serviceIds, ['api']);
+  assert.equal(store.snapshot().runs[0].repository, 'Perricheno/apiblock');
+});
+
 test('ordered stages, idempotency, completion and public event vocabulary', async () => {
   const { store, send, event } = await setup();
   const start = event({ type: 'start', action: 'deploy', commit: 'a'.repeat(40), stages: ['prepare', 'verify'] });

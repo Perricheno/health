@@ -21,7 +21,7 @@ class MemoryBucket {
 }
 const now = Date.UTC(2026, 9, 8, 12, 0, 0);
 const point = (time, status = 'operational', latency = 100) => ({ time, status, latency, code: status === 'down' ? 503 : 200 });
-const ok = async () => new Response('ok', { status: 200 });
+const ok = async url => new Response('ok', { status: String(url).startsWith('https://api.perricheno.com/') ? 401 : 200 });
 const makeEnv = () => ({ HISTORY: new MemoryBucket() });
 
 test('config rejects duplicate IDs, unsafe protocols and invalid thresholds', () => {
@@ -33,8 +33,11 @@ test('config rejects duplicate IDs, unsafe protocols and invalid thresholds', ()
 });
 
 test('probes distinguish HTTP errors, custom expected status, network failures and timeouts', async () => {
-  const service = parseServices({})[0];
-  assert.equal((await probe(service, ok, now)).status, 'operational');
+  const defaultApi = parseServices({})[0];
+  assert.equal((await probe(defaultApi, async () => new Response(null, { status: 401 }), now)).status, 'operational');
+  assert.equal((await probe(defaultApi, async () => new Response(null, { status: 502 }), now)).status, 'down');
+  const service = { ...defaultApi, expectedStatus: undefined };
+  assert.equal((await probe(service, async () => new Response('ok'), now)).status, 'operational');
   assert.equal((await probe(service, async () => new Response(null, { status: 503 }), now)).status, 'down');
   assert.equal((await probe({ ...service, expectedStatus: 401 }, async () => new Response(null, { status: 401 }), now)).status, 'operational');
   assert.equal((await probe(service, async () => { throw new Error('secret network detail'); }, now)).reason, 'connection');
@@ -43,7 +46,7 @@ test('probes distinguish HTTP errors, custom expected status, network failures a
 });
 
 test('slow successful probes are degraded and redirects do not forward private headers', async () => {
-  const service = { ...parseServices({})[0], degradedMs: 1, headers: { Authorization: 'secret' } };
+  const service = { ...parseServices({})[0], expectedStatus: undefined, degradedMs: 1, headers: { Authorization: 'secret' } };
   const result = await probe(service, async (_url, options) => {
     assert.equal(options.redirect, 'manual');
     await new Promise(resolve => setTimeout(resolve, 5));

@@ -59,6 +59,7 @@ Cloudflare: Worker → Settings → Variables and Secrets → **`SERVICES_JSON`*
     "id": "api",
     "name": "API (api.perricheno.com)",
     "url": "https://api.perricheno.com",
+    "expectedStatus": 401,
     "method": "GET",
     "timeoutMs": 10000,
     "degradedMs": 1500
@@ -174,4 +175,16 @@ Staging-портал в действующем конфиге Egin — **dev-api
 
 В публичный поток принимаются только фиксированные коды событий и числовой прогресс сборки: произвольные `message`, `raw`, stdout/stderr не публикуются. Последовательность проверяется; дубликаты идемпотентны, пропуски/запоздалые изменения завершённого запуска отвергаются. Успех допускается только после завершения всех этапов. Без heartbeat 90 секунд показывается Updates lost; при восстановлении отправки состояние возвращается к реальному. Сам сервис мониторинга не запускает команды выкладки.
 
-Для других проектов доступна переменная `DEPLOY_PROJECTS_JSON` — массив объектов `{id,name,repository,services:{production:[serviceIds],staging:[serviceIds]}}`. ID сервисов должны совпадать с SERVICES_JSON. По умолчанию подключён Perricheno/egin.
+Для других проектов доступна переменная `DEPLOY_PROJECTS_JSON` — массив объектов `{id,name,repository,services:{production:[serviceIds],staging:[serviceIds]}}`. ID сервисов должны совпадать с SERVICES_JSON. По умолчанию подключены Perricheno/egin и Perricheno/apiblock.
+
+### APIBlock
+
+APIBlock указан в мониторинге как `api` и отвечает на `GET /` кодом `401` из-за защиты панели. Он считается исправным при `401`: это проверка доступности HTTP и панели авторизации, а не полный тест billing и OpenAI. Если в Worker задан `SERVICES_JSON`, добавьте в запись `api` поле `"expectedStatus":401`: переменная полностью переопределяет значения по умолчанию.
+
+Проект `apiblock` привязан к сервису `api` в production; у него отдельный токен и отдельный процесс от Egin. Если задан `DEPLOY_PROJECTS_JSON`, добавьте объект `{"id":"apiblock","name":"APIBlock","repository":"Perricheno/apiblock","services":{"production":["api"],"staging":[]}}`, сохранив существующие объекты.
+
+После публикации Worker выполните на сервере `python3 scripts/configure-apiblock-token.py` от root и введите PIN администратора Health. Скрипт выпускает отдельный токен проекта `apiblock`, сохраняет его в `/etc/apiblock/health.json` с правами 0600 и отправляет проверочный ping. Токен не выводится в терминал. Не используйте токен Egin и не сохраняйте токен в Git.
+
+На сервере установите интеграцию командой `flock -w 30 /run/lock/apiblock-deploy.lock python3 scripts/install-apiblock-reporter.py`. Таймер запускает прежний deployer через репортёр; если конфигурации нет, он непосредственно передаёт управление deployer. Прогресс отражает подготовку, проверки, переключение и проверку готового релиза. Ошибки телеметрии не меняют результат деплоя, а пустые проверки таймера не создают фиктивных записей. Ручной откат с отчётом запускается командой `python3 /usr/local/sbin/apiblock-health-reporter.py rollback` и сохраняет штатную блокировку, защиту сборки и отключение таймера при откате.
+
+Отдельного production-деплоя ради проверки не требуется. Проверяйте передачу безопасным `ping` с токеном проекта; следующие настоящие релизы появятся автоматически. Egin использует собственный deployer и собственный токен, хотя оба приложения расположены на одном сервере.

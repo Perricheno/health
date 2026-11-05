@@ -1,7 +1,10 @@
 const ACTIVE = ['queued', 'running'];
-export const STAGES = { prepare: 'Preparing release', build_api: 'Building API', build_web: 'Building websites', backup: 'Backing up database', start: 'Starting healthy containers', assets: 'Preserving assets', switch: 'Switching traffic', verify: 'Verifying release' };
+export const STAGES = { prepare: 'Preparing release', validate: 'Checking release', build_api: 'Building API', build_web: 'Building websites', backup: 'Backing up database', start: 'Starting healthy containers', assets: 'Preserving assets', switch: 'Switching traffic', verify: 'Verifying release' };
 const LOGS = { build_step: 'Build step', build_cached: 'Using build cache', build_done: 'Build step completed', build_export: 'Exporting image', health_retry: 'Waiting for release health checks', image_reused: 'Reusing tested images', rollback_restored: 'Previous gateway configuration restored', command_failed: 'Deployment command failed; check private server logs', aborted: 'Deployment interrupted', heartbeat: 'Deployment is still running' };
-const DEFAULT_PROJECTS = [{ id: 'egin', name: 'Egin', repository: 'Perricheno/egin', services: { production: ['egin-web', 'egin-api'], staging: ['egin-dev-web', 'egin-dev-api'] } }];
+const DEFAULT_PROJECTS = [
+  { id: 'egin', name: 'Egin', repository: 'Perricheno/egin', services: { production: ['egin-web', 'egin-api'], staging: ['egin-dev-web', 'egin-dev-api'] } },
+  { id: 'apiblock', name: 'APIBlock', repository: 'Perricheno/apiblock', services: { production: ['api'], staging: [] } },
+];
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(n => n.toString(16).padStart(2, '0')).join('');
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 export function deploymentProjects(env) {
