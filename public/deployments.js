@@ -56,7 +56,7 @@ class DeploymentView {
         const data = await response.json();
         if (response.status === 401) { $('#admin-open').click(); return; }
         if (!response.ok) throw new Error(data.error || 'Approval failed');
-        this.approve.textContent = 'Approved · waiting for deploy agent';
+        this.approve.textContent = 'Approval recorded · deployment not started';
       } catch (error) { this.approve.textContent = error.message || 'Approval failed'; }
       finally { this.approve.disabled = false; }
     });
