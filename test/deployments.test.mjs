@@ -41,8 +41,39 @@ test('APIBlock uses a separate token and maps production events to its API servi
 test('existing custom project configuration retains Egin and gains APIBlock', () => {
   const egin = { id: 'egin', name: 'Egin', repository: 'Perricheno/egin', services: { production: ['egin-api'], staging: [] } };
   const env = { DEPLOY_PROJECTS_JSON: JSON.stringify([egin]) };
-  assert.deepEqual(deploymentProjects(env).map(p => p.id), ['egin', 'apiblock']);
+  assert.deepEqual(deploymentProjects(env).map(p => p.id), ['egin', 'apiblock', 'penall']);
   assert.deepEqual(deploymentProjects({ DEPLOY_PROJECTS_JSON: '[]' }), []);
+});
+
+test('Penall approval is scoped to a recent successful staging commit and requires a strong configured admin PIN', async () => {
+  const { storage, store } = await setup();
+  const token = await store.issueToken('penall');
+  const runId = crypto.randomUUID(), commit = 'c'.repeat(40);
+  const send = payload => store.ingest(new Request('https://health.test/api/deployments/ingest', {method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({project:'penall',environment:'staging',runId,...payload})}));
+  await send({seq:1,type:'start',action:'deploy',commit,stages:['prepare']});
+  await assert.rejects(store.approvePenall(runId));
+  await send({seq:2,type:'stage',stage:'prepare',state:'running'});
+  await send({seq:3,type:'stage',stage:'prepare',state:'complete'});
+  await send({seq:4,type:'finish',status:'success'});
+  const engine = {state:{intervalMs:1000}};
+  const weak = new AdminApi(storage, engine, {}, store);
+  const request = (path, body, cookie='') => new Request(`https://health.test/api/admin/${path}`, {method:'POST',headers:{Origin:'https://health.test',Cookie:cookie},body:JSON.stringify(body)});
+  const login = await weak.handle(request('login',{pin:'0000'}));
+  const weakCookie = login.headers.get('Set-Cookie').split(';')[0];
+  assert.equal((await weak.handle(request('penall-approve',{runId},weakCookie))).status,503);
+  const admin = new AdminApi(storage, engine, {ADMIN_PIN:'4827'}, store);
+  const strongLogin = await admin.handle(request('login',{pin:'4827'}));
+  const cookie = strongLogin.headers.get('Set-Cookie').split(';')[0];
+  assert.equal((await admin.handle(request('penall-approve',{runId}))).status,401);
+  const approval = await admin.handle(request('penall-approve',{runId},cookie));
+  assert.equal(approval.status,200);
+  assert.equal((await approval.json()).approval.commit,commit);
+  const read = key => store.readPenallApproval(new Request('https://health.test/api/deployments/penall-approval',{headers:{Authorization:`Bearer ${key}`}}));
+  assert.equal((await read('x'.repeat(64))).status,401);
+  assert.equal((await (await read(token)).json()).approval.commit,commit);
+  const next = crypto.randomUUID();
+  await store.ingest(new Request('https://health.test/api/deployments/ingest',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({project:'penall',environment:'staging',runId:next,seq:1,type:'start',action:'deploy',commit:'d'.repeat(40),stages:['prepare']})}));
+  assert.equal((await (await read(token)).json()).approval,null);
 });
 
 test('ordered stages, idempotency, completion and public event vocabulary', async () => {

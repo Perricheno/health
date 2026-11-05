@@ -15,7 +15,7 @@ export class AdminApi {
     const url = new URL(request.url);
     const method = request.method;
     const path = url.pathname;
-    if (!['/api/admin/session', '/api/admin/login', '/api/admin/logout', '/api/admin/settings', '/api/admin/deploy-token'].includes(path)) return response({ error: 'Not found' }, 404);
+    if (!['/api/admin/session', '/api/admin/login', '/api/admin/logout', '/api/admin/settings', '/api/admin/deploy-token', '/api/admin/penall-approve'].includes(path)) return response({ error: 'Not found' }, 404);
     const allowed = path === '/api/admin/session' ? 'GET' : path === '/api/admin/settings' ? 'PUT' : 'POST';
     if (method !== allowed) return response({ error: 'Method not allowed' }, 405, { Allow: allowed });
     if (method !== 'GET' && (request.headers.get('Origin') !== url.origin || request.headers.get('Sec-Fetch-Site') === 'cross-site')) return response({ error: 'Invalid origin' }, 403);
@@ -41,7 +41,7 @@ export class AdminApi {
       await this.storage.put('auth', auth);
       return response({ ok: true }, 200, { 'Set-Cookie': cookie('') });
     }
-    if (['/api/admin/settings', '/api/admin/deploy-token'].includes(path) && !valid) return response({ error: 'Please sign in' }, 401);
+    if (['/api/admin/settings', '/api/admin/deploy-token', '/api/admin/penall-approve'].includes(path) && !valid) return response({ error: 'Please sign in' }, 401);
     let body;
     try {
       if (Number(request.headers.get('Content-Length') || 0) > 2048) return response({ error: 'Request too large' }, 413);
@@ -60,9 +60,17 @@ export class AdminApi {
       if (!body || typeof body !== 'object') throw new Error();
     } catch { return response({ error: 'Invalid request' }, 400); }
     if (path === '/api/admin/deploy-token') {
+      if (body.project === 'penall' && (!this.env.ADMIN_PIN || this.env.ADMIN_PIN === '0000')) return response({error:'Set a non-default admin PIN before issuing a Penall token'},503);
       if (!this.deployments) return response({ error: 'Deployments unavailable' }, 503);
       try { return response({ token: await this.deployments.issueToken(body.project), project: body.project }); }
       catch (error) { return response({ error: error.message }, 400); }
+    }
+    if (path === '/api/admin/penall-approve') {
+      if (!this.env.ADMIN_PIN || this.env.ADMIN_PIN === '0000') return response({error:'Set a non-default admin PIN before enabling production approval'},503);
+      if (!this.deployments) return response({error:'Deployments unavailable'},503);
+      if (!body || Object.keys(body).length !== 1 || typeof body.runId !== 'string') return response({error:'Invalid request'},400);
+      try { return response({approval:await this.deployments.approvePenall(body.runId)}); }
+      catch (error) { return response({error:error.message},409); }
     }
     if (path === '/api/admin/settings') {
       if (!INTERVALS.includes(body.intervalSeconds)) return response({ error: 'Choose 1, 5, 10, 30 or 60 seconds' }, 400);

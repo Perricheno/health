@@ -7,11 +7,18 @@ export const DEFAULT_SERVICES = JSON.stringify([
   { id: 'egin-api', name: 'Egin · Developer API', url: 'https://api-egin.perricheno.com/openapi.json' },
   { id: 'egin-dev-web', name: 'Egin · Staging website', url: 'https://dev-egin.perricheno.com/api/health' },
   { id: 'egin-dev-api', name: 'Egin · Staging API', url: 'https://dev-api-egin.perricheno.com/openapi.json' },
+  { id: 'penall-web', name: 'Penall · Production', url: 'https://penall.perricheno.com/' },
+  { id: 'penall-staging', name: 'Penall · Staging', url: 'https://dev-penall.perricheno.com/' },
 ]);
 
 export function parseServices(env) {
-  const values = JSON.parse(env.SERVICES_JSON || DEFAULT_SERVICES);
+  let values = JSON.parse(env.SERVICES_JSON || DEFAULT_SERVICES);
   if (!Array.isArray(values) || values.length > 20) throw new Error('SERVICES_JSON must be an array of up to 20 services');
+  if (env.SERVICES_JSON && values.length) {
+    const defaults = JSON.parse(DEFAULT_SERVICES).filter(v => v.id === 'penall-web' || v.id === 'penall-staging');
+    values = [...values, ...defaults.filter(v => !values.some(existing => existing.id === v.id))];
+    if (values.length > 20) throw new Error('No room for Penall services');
+  }
   const ids = new Set();
   return values.map(value => {
     const { id, name, url, headers = {}, method = 'GET', timeoutMs = 10000, degradedMs = 1500 } = value;

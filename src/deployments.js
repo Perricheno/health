@@ -4,6 +4,7 @@ const LOGS = { build_step: 'Build step', build_cached: 'Using build cache', buil
 const DEFAULT_PROJECTS = [
   { id: 'egin', name: 'Egin', repository: 'Perricheno/egin', services: { production: ['egin-web', 'egin-api'], staging: ['egin-dev-web', 'egin-dev-api'] } },
   { id: 'apiblock', name: 'APIBlock', repository: 'Perricheno/apiblock', services: { production: ['api'], staging: [] } },
+  { id: 'penall', name: 'Penall', repository: 'Perricheno/RetailFlow', services: { production: ['penall-web'], staging: ['penall-staging'] } },
 ];
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(n => n.toString(16).padStart(2, '0')).join('');
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -12,9 +13,11 @@ export function deploymentProjects(env) {
   if (!Array.isArray(projects) || projects.length > 10) throw new Error('Invalid deployment projects');
   // Existing deployments may provide their own project list. Preserve it and
   // add APIBlock unless an explicit configuration for it already exists.
-  if (env.DEPLOY_PROJECTS_JSON && projects.length && !projects.some(p => p.id === 'apiblock')) {
-    if (projects.length >= 10) throw new Error('No room for APIBlock deployment project');
-    projects = [...projects, DEFAULT_PROJECTS[1]];
+  if (env.DEPLOY_PROJECTS_JSON && projects.length) {
+    for (const id of ['apiblock', 'penall']) if (!projects.some(p => p.id === id)) {
+      if (projects.length >= 10) throw new Error('No room for deployment project');
+      projects = [...projects, DEFAULT_PROJECTS.find(p => p.id === id)];
+    }
   }
   const seen = new Set();
   return projects.map(p => {
@@ -58,6 +61,32 @@ export class DeploymentStore {
       await this.storage.put('deploy-tokens', tokens);
       return token;
     });
+  }
+  async approvePenall(runId, now = Date.now()) {
+    return this.serial(async () => {
+      if (!deploymentProjects(this.env).some(p => p.id === 'penall')) throw new Error('Penall is disabled');
+      const latest = this.state.runs.find(r => r.project === 'penall' && r.environment === 'staging');
+      if (!latest || latest.id !== runId || latest.status !== 'success' || !/^[a-f0-9]{40}$/.test(latest.commit || '') || now - latest.finishedAt > 24 * 60 * 60 * 1000) {
+        throw new Error('A recent successful Penall staging deployment is required');
+      }
+      const approval = { project:'penall', runId, commit:latest.commit, approvedAt:now, expiresAt:now + 60 * 60 * 1000 };
+      await this.storage.put('penall-approval', approval);
+      return approval;
+    });
+  }
+  async readPenallApproval(request, now = Date.now()) {
+    if (request.method !== 'GET') return json({ error:'Method not allowed' }, 405);
+    if (!deploymentProjects(this.env).some(p => p.id === 'penall')) return json({error:'Penall is disabled'},404);
+    const token = request.headers.get('Authorization')?.match(/^Bearer ([a-zA-Z0-9_-]{32,256})$/)?.[1];
+    if (!token) return json({error:'Invalid deployment token'},401);
+    const tokens = await this.storage.get('deploy-tokens') || {};
+    const actual = await hash(token), expected = tokens.penall || '';
+    let difference = actual.length ^ expected.length;
+    for (let i = 0; i < actual.length; i++) difference |= actual.charCodeAt(i) ^ (expected.charCodeAt(i) || 0);
+    if (difference) return json({error:'Invalid deployment token'},401);
+    const approval = await this.storage.get('penall-approval');
+    const latest = this.state.runs.find(r => r.project === 'penall' && r.environment === 'staging');
+    return json({ approval: approval && approval.expiresAt > now && latest?.id === approval.runId && latest.status === 'success' && latest.commit === approval.commit ? approval : null });
   }
   snapshot(now = Date.now()) {
     const projects = deploymentProjects(this.env);

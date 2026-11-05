@@ -45,6 +45,22 @@ class DeploymentView {
     this.el.innerHTML = `<div class="deploy-top"><div class="deploy-name"></div><span class="deploy-status"></span></div><div class="deploy-current"><strong></strong><span class="deploy-elapsed"></span></div><div class="deploy-progress" role="progressbar" aria-label="Completed deployment stages"><span></span></div><div class="deploy-meta"><span class="deploy-completion"></span><a class="deploy-commit" target="_blank" rel="noopener noreferrer"></a></div><details class="deploy-details"><summary><span>View deployment</span><span class="detail-chevron">＋</span></summary><ol class="deploy-stages"></ol><div class="deploy-console" tabindex="0" aria-label="Deployment event stream"><div class="console-caption"><span>EVENT STREAM</span><span class="console-live"></span></div><div class="deploy-lines" role="log" aria-live="off"></div></div></details>`;
     this.details = this.el.querySelector('details');
     this.details.addEventListener('toggle', () => { this.el.querySelector('.detail-chevron').textContent = this.details.open ? '−' : '＋'; });
+    this.approve = element('button', 'deploy-approve', 'Approve Penall production');
+    this.approve.type = 'button';
+    this.approve.addEventListener('click', async () => {
+      const run = this.run;
+      if (!confirm(`Approve Penall commit ${run.commit.slice(0, 12)} for production?`)) return;
+      this.approve.disabled = true;
+      try {
+        const response = await fetch('/api/admin/penall-approve', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({runId:run.id})});
+        const data = await response.json();
+        if (response.status === 401) { $('#admin-open').click(); return; }
+        if (!response.ok) throw new Error(data.error || 'Approval failed');
+        this.approve.textContent = 'Approved · waiting for deploy agent';
+      } catch (error) { this.approve.textContent = error.message || 'Approval failed'; }
+      finally { this.approve.disabled = false; }
+    });
+    this.el.append(this.approve);
     this.render(run);
   }
   render(run) {
@@ -52,6 +68,7 @@ class DeploymentView {
     const find = selector => this.el.querySelector(selector);
     const status = statusOf(run);
     this.el.dataset.status = status;
+    this.approve.hidden = !(run.project === 'penall' && run.environment === 'staging' && status === 'success' && /^[a-f0-9]{40}$/.test(run.commit || ''));
     const project = snapshot.projects.find(p => p.id === run.project);
     find('.deploy-name').textContent = `${project?.name || run.project} / ${run.environment === 'production' ? 'Production' : 'Staging'}`;
     find('.deploy-status').textContent = labels[status];

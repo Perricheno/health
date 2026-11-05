@@ -33,6 +33,7 @@ export async function monitorRequest(request, engine, admin, deployments) {
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/admin/')) return admin.handle(request);
   if (url.pathname === '/api/deployments/ingest' && deployments) return deployments.ingest(request);
+  if (url.pathname === '/api/deployments/penall-approval' && deployments) return deployments.readPenallApproval(request);
   const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   if (request.method !== 'GET') return new Response(null, { status: 405, headers: { Allow: 'GET' } });
   if (url.pathname === '/api/health') return json({ ok: true });
