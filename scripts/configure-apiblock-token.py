@@ -16,7 +16,7 @@ opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
 def post(path, body):
     request = urllib.request.Request(origin + path, data=json.dumps(body).encode(), method='POST',
-        headers={'Origin': origin, 'Content-Type': 'application/json'})
+        headers={'Origin': origin, 'Content-Type': 'application/json', 'User-Agent': 'Perricheno-Health-Deploy/1.0'})
     with opener.open(request, timeout=10) as response:
         return json.load(response)
 
@@ -48,7 +48,8 @@ try:
     print('APIBlock token saved privately to /etc/apiblock/health.json.')
     ping = urllib.request.Request(origin + '/api/deployments/ingest',
         data=json.dumps({'project': 'apiblock', 'type': 'ping'}).encode(), method='POST',
-        headers={'Authorization': 'Bearer ' + issued['token'], 'Content-Type': 'application/json'})
+        headers={'Authorization': 'Bearer ' + issued['token'], 'Content-Type': 'application/json',
+                 'User-Agent': 'Perricheno-Health-Deploy/1.0'})
     with opener.open(ping, timeout=10) as response:
         if not json.load(response).get('ok'):
             raise ValueError('ping rejected')

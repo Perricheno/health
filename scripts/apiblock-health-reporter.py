@@ -75,7 +75,8 @@ class Reporter:
                 delivered = False
                 for attempt in range(4):
                     req = urllib.request.Request(self.endpoint, data=payload, method='POST',
-                        headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'})
+                        headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json',
+                                 'User-Agent': 'Perricheno-Health-Deploy/1.0'})
                     try:
                         with urllib.request.urlopen(req, timeout=2) as response:
                             delivered = bool(json.load(response).get('ok'))
