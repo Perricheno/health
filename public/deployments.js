@@ -78,7 +78,7 @@ class DeploymentView {
         const data = await response.json();
         if (response.status === 401 && data.error === 'Please sign in') { $('#admin-open').click(); return; }
         if (!response.ok) throw new Error(data.error || 'Approval failed');
-        this.approve.textContent = 'Approval recorded · deployment not started';
+        this.approve.textContent = 'Approved · waiting for release';
       } catch (error) { this.approve.textContent = error.message || 'Approval failed'; }
       finally { this.approve.disabled = false; }
     });

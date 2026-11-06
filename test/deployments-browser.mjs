@@ -76,7 +76,7 @@ try {
     await penall.locator('.deploy-approve').click();
     await page.locator('.release-dialog input').fill(releaseSecret);
     await page.locator('.release-dialog button[type=submit]').click();
-    await penall.getByText('Approval recorded · deployment not started').waitFor();
+    await penall.getByText('Approved · waiting for release').waitFor();
   }
   await page.setViewportSize({ width: 320, height: 568 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
