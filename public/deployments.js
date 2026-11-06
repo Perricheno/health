@@ -4,6 +4,27 @@ const labels = { running: 'Deploying', queued: 'Queued', success: 'Deployed', fa
 const views = new Map();
 let snapshot, stream, poll, retry, lastVersion = -1;
 
+function releaseCredential(commit) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'release-dialog';
+    const form = document.createElement('form'); form.method = 'dialog';
+    const title = element('h2', '', 'Approve Penall production');
+    const label = element('label', '', `Release credential for ${commit.slice(0, 12)}`);
+    const input = document.createElement('input');
+    input.type = 'password'; input.required = true; input.autocomplete = 'off';
+    label.append(input);
+    const actions = element('div', 'release-actions');
+    const cancel = element('button', '', 'Cancel'); cancel.type = 'button';
+    const approve = element('button', '', 'Approve'); approve.type = 'submit';
+    cancel.addEventListener('click', () => dialog.close());
+    form.addEventListener('submit', event => { event.preventDefault(); const value = input.value; input.value = ''; resolve(value); dialog.close(); });
+    dialog.addEventListener('close', () => { input.value = ''; dialog.remove(); resolve(null); }, {once:true});
+    actions.append(cancel, approve); form.append(title, label, actions); dialog.append(form);
+    document.body.append(dialog); dialog.showModal(); input.focus();
+  });
+}
+
 function element(tag, className, text) {
   const el = document.createElement(tag);
   if (className) el.className = className;
@@ -49,12 +70,13 @@ class DeploymentView {
     this.approve.type = 'button';
     this.approve.addEventListener('click', async () => {
       const run = this.run;
-      if (!confirm(`Approve Penall commit ${run.commit.slice(0, 12)} for production?`)) return;
+      const releaseSecret = await releaseCredential(run.commit);
+      if (!releaseSecret) return;
       this.approve.disabled = true;
       try {
-        const response = await fetch('/api/admin/penall-approve', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({runId:run.id})});
+        const response = await fetch('/api/admin/penall-approve', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({runId:run.id,releaseSecret})});
         const data = await response.json();
-        if (response.status === 401) { $('#admin-open').click(); return; }
+        if (response.status === 401 && data.error === 'Please sign in') { $('#admin-open').click(); return; }
         if (!response.ok) throw new Error(data.error || 'Approval failed');
         this.approve.textContent = 'Approval recorded · deployment not started';
       } catch (error) { this.approve.textContent = error.message || 'Approval failed'; }

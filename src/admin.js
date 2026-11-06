@@ -59,16 +59,41 @@ export class AdminApi {
       body = JSON.parse(text);
       if (!body || typeof body !== 'object') throw new Error();
     } catch { return response({ error: 'Invalid request' }, 400); }
+    // The monitoring PIN is intentionally separate from release authority.
+    // Even a valid monitoring session must supply the high-entropy release
+    // credential; a leaked or default four-digit PIN cannot approve releases.
+    if (path === '/api/admin/penall-approve' || (path === '/api/admin/deploy-token' && body.project === 'penall')) {
+      const expected = this.env.PENALL_APPROVAL_HASH || '';
+      if (!/^[a-f0-9]{64}$/.test(expected)) return response({error:'Penall release authorization is not configured'},503);
+      const ip = await digest(request.headers.get('CF-Connecting-IP') || 'local');
+      const attempts = await this.storage.get('penall-auth') || { failures:{}, global:[] };
+      for (const [key, values] of Object.entries(attempts.failures)) {
+        attempts.failures[key] = values.filter(t => t > now - WINDOW_MS);
+        if (!attempts.failures[key].length) delete attempts.failures[key];
+      }
+      attempts.global = attempts.global.filter(t => t > now - WINDOW_MS);
+      if ((attempts.failures[ip] || []).length >= 5 || attempts.global.length >= 30) return response({error:'Too many attempts. Try again later.'},429);
+      const supplied = typeof body.releaseSecret === 'string' && body.releaseSecret.length <= 256 ? body.releaseSecret : '';
+      const actual = await digest(supplied);
+      let mismatch = 0;
+      for (let i = 0; i < expected.length; i++) mismatch |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
+      if (mismatch) {
+        attempts.failures[ip] = [...(attempts.failures[ip] || []), now];
+        attempts.global.push(now);
+        await this.storage.put('penall-auth', attempts);
+        return response({error:'Incorrect release credential'},401);
+      }
+      delete attempts.failures[ip];
+      await this.storage.put('penall-auth', attempts);
+    }
     if (path === '/api/admin/deploy-token') {
-      if (body.project === 'penall' && (!this.env.ADMIN_PIN || this.env.ADMIN_PIN === '0000')) return response({error:'Set a non-default admin PIN before issuing a Penall token'},503);
       if (!this.deployments) return response({ error: 'Deployments unavailable' }, 503);
       try { return response({ token: await this.deployments.issueToken(body.project), project: body.project }); }
       catch (error) { return response({ error: error.message }, 400); }
     }
     if (path === '/api/admin/penall-approve') {
-      if (!this.env.ADMIN_PIN || this.env.ADMIN_PIN === '0000') return response({error:'Set a non-default admin PIN before enabling production approval'},503);
       if (!this.deployments) return response({error:'Deployments unavailable'},503);
-      if (!body || Object.keys(body).length !== 1 || typeof body.runId !== 'string') return response({error:'Invalid request'},400);
+      if (!body || Object.keys(body).length !== 2 || typeof body.runId !== 'string' || typeof body.releaseSecret !== 'string') return response({error:'Invalid request'},400);
       try { return response({approval:await this.deployments.approvePenall(body.runId)}); }
       catch (error) { return response({error:error.message},409); }
     }

@@ -54,6 +54,30 @@ try {
   assert.match(await page.locator('.deployment-card[data-status=success] .deploy-current').textContent(), /Release is live/);
   await page.reload();
   await page.locator('.deployment-card[data-status=success]').waitFor();
+  const releaseSecret = process.env.TEST_RELEASE_SECRET;
+  if (releaseSecret) {
+    const issuedPenall = await context.request.post(`${base}/api/admin/deploy-token`, { headers:{Origin:base}, data:{project:'penall',releaseSecret} });
+    assert.equal(issuedPenall.status(), 200);
+    const penallToken = (await issuedPenall.json()).token;
+    const penallRun = crypto.randomUUID(); let penallSeq = 0;
+    const sendPenall = async fields => {
+      const response = await context.request.post(`${base}/api/deployments/ingest`, {headers:{Authorization:`Bearer ${penallToken}`},data:{project:'penall',environment:'staging',runId:penallRun,seq:++penallSeq,...fields}});
+      assert.equal(response.status(), 200);
+    };
+    await sendPenall({type:'start',action:'deploy',commit:'b'.repeat(40),stages:['prepare']});
+    await sendPenall({type:'stage',stage:'prepare',state:'running'});
+    await sendPenall({type:'stage',stage:'prepare',state:'complete'});
+    await sendPenall({type:'finish',status:'success'});
+    const penall = page.locator('.deployment-card').filter({hasText:'Penall / Staging'});
+    await penall.locator('.deploy-approve').click();
+    await page.locator('.release-dialog input').fill('incorrect');
+    await page.locator('.release-dialog button[type=submit]').click();
+    await penall.getByText('Incorrect release credential').waitFor();
+    await penall.locator('.deploy-approve').click();
+    await page.locator('.release-dialog input').fill(releaseSecret);
+    await page.locator('.release-dialog button[type=submit]').click();
+    await penall.getByText('Approval recorded · deployment not started').waitFor();
+  }
   await page.setViewportSize({ width: 320, height: 568 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);

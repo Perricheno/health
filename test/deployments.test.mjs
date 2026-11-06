@@ -45,7 +45,7 @@ test('existing custom project configuration retains Egin and gains APIBlock', ()
   assert.deepEqual(deploymentProjects({ DEPLOY_PROJECTS_JSON: '[]' }), []);
 });
 
-test('Penall approval is scoped to a recent successful staging commit and requires a strong configured admin PIN', async () => {
+test('Penall approval is scoped to staging and requires an independent release credential', async () => {
   const { storage, store } = await setup();
   const token = await store.issueToken('penall');
   const runId = crypto.randomUUID(), commit = 'c'.repeat(40);
@@ -61,11 +61,14 @@ test('Penall approval is scoped to a recent successful staging commit and requir
   const login = await weak.handle(request('login',{pin:'0000'}));
   const weakCookie = login.headers.get('Set-Cookie').split(';')[0];
   assert.equal((await weak.handle(request('penall-approve',{runId},weakCookie))).status,503);
-  const admin = new AdminApi(storage, engine, {ADMIN_PIN:'4827'}, store);
-  const strongLogin = await admin.handle(request('login',{pin:'4827'}));
+  const secret = 'a randomly generated release password';
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)))].map(n => n.toString(16).padStart(2, '0')).join('');
+  const admin = new AdminApi(storage, engine, {PENALL_APPROVAL_HASH:hash}, store);
+  const strongLogin = await admin.handle(request('login',{pin:'0000'}));
   const cookie = strongLogin.headers.get('Set-Cookie').split(';')[0];
   assert.equal((await admin.handle(request('penall-approve',{runId}))).status,401);
-  const approval = await admin.handle(request('penall-approve',{runId},cookie));
+  assert.equal((await admin.handle(request('penall-approve',{runId,releaseSecret:'wrong'},cookie))).status,401);
+  const approval = await admin.handle(request('penall-approve',{runId,releaseSecret:secret},cookie));
   assert.equal(approval.status,200);
   assert.equal((await approval.json()).approval.commit,commit);
   const read = key => store.readPenallApproval(new Request('https://health.test/api/deployments/penall-approval',{headers:{Authorization:`Bearer ${key}`}}));
@@ -74,6 +77,18 @@ test('Penall approval is scoped to a recent successful staging commit and requir
   const next = crypto.randomUUID();
   await store.ingest(new Request('https://health.test/api/deployments/ingest',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({project:'penall',environment:'staging',runId:next,seq:1,type:'start',action:'deploy',commit:'d'.repeat(40),stages:['prepare']})}));
   assert.equal((await (await read(token)).json()).approval,null);
+});
+
+test('Penall token issuance cannot be authorized by the monitoring PIN and bad credentials are rate limited', async () => {
+  const { storage, store } = await setup();
+  const secret = 'secure release credential';
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)))].map(n => n.toString(16).padStart(2, '0')).join('');
+  const admin = new AdminApi(storage, {state:{intervalMs:1000}}, {PENALL_APPROVAL_HASH:hash}, store);
+  const request = (path, body, cookie='') => new Request(`https://health.test/api/admin/${path}`, {method:'POST',headers:{Origin:'https://health.test',Cookie:cookie},body:JSON.stringify(body)});
+  const login = await admin.handle(request('login',{pin:'0000'}));
+  const cookie = login.headers.get('Set-Cookie').split(';')[0];
+  for (let i=0; i<5; i++) assert.equal((await admin.handle(request('deploy-token',{project:'penall',releaseSecret:'wrong'},cookie))).status,401);
+  assert.equal((await admin.handle(request('deploy-token',{project:'penall',releaseSecret:secret},cookie))).status,429);
 });
 
 test('ordered stages, idempotency, completion and public event vocabulary', async () => {

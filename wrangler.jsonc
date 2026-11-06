@@ -4,6 +4,7 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
   "keep_vars": true,
+  "vars": { "PENALL_APPROVAL_HASH": "1f8d7daf71dba983fd180546812a9f7251a121d0dd1694fbbe37427b6de0f94e" },
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
   "r2_buckets": [{ "binding": "HISTORY", "bucket_name": "perricheno-health-history" }],
   "durable_objects": { "bindings": [{ "name": "MONITOR", "class_name": "MonitorCoordinator" }] },

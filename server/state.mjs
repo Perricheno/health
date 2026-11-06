@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-const STATE_KEYS = new Set(['monitor', 'auth', 'deployments', 'deploy-tokens', 'penall-approval']);
+const STATE_KEYS = new Set(['monitor', 'auth', 'deployments', 'deploy-tokens', 'penall-approval', 'penall-auth']);
 export class FileState {
   constructor(directory) { this.directory = path.resolve(directory, 'state'); }
   async get(key) {
